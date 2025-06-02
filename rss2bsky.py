@@ -63,14 +63,14 @@ def make_rich(content):
                     text_builder.text(t)
     return text_builder
 
-def get_image_from_url(image_url, client):
+def get_image_from_url(image_url, client, alt_text="Preview image"):
     try:
         r = httpx.get(image_url)
         if r.status_code != 200:
             return None
         img_blob = client.upload_blob(r.content)
         img_model = models.AppBskyEmbedImages.Image(
-            alt="Preview image", image=img_blob.blob
+            alt=alt_text, image=img_blob.blob
         )
         return img_model
     except Exception as e:
@@ -131,7 +131,9 @@ def main():
 
             # Try to fetch image from snippet (Open Graph/Twitter Card)
             if link_metadata.get("image"):
-                img = get_image_from_url(link_metadata["image"], client)
+                # Prefer the RSS title, fall back to the link_metadata's title
+                alt_text = title_text or link_metadata.get("title") or "Preview image"
+                img = get_image_from_url(link_metadata["image"], client, alt_text=alt_text)
                 if img:
                     images.append(img)
 
