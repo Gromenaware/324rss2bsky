@@ -5,7 +5,6 @@ import logging
 import re
 import httpx
 import time
-
 from atproto import Client, client_utils, models
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -52,7 +51,6 @@ def make_rich(content):
         # If the line is a URL, make it a clickable link
         if line.startswith("http"):
             url = line.strip()
-            url_obj = urlparse(url)
             text_builder.link(url, url)
         else:
             tag_split = re.split("(#[a-zA-Z0-9]+)", line)
@@ -79,6 +77,9 @@ def get_image_from_url(image_url, client):
         logging.warning(f"Could not fetch/upload image from {image_url}: {e}")
         return None
 
+def is_html(text):
+    return bool(re.search(r'<.*?>', text))
+
 def main():
     # --- Parse command-line arguments ---
     parser = argparse.ArgumentParser(description="Post RSS to Bluesky.")
@@ -87,7 +88,6 @@ def main():
     parser.add_argument("bsky_username", help="Bluesky username")
     parser.add_argument("bsky_app_password", help="Bluesky app password")
     args = parser.parse_args()
-
     feed_url = args.rss_feed
     bsky_handle = args.bsky_handle
     bsky_username = args.bsky_username
@@ -115,7 +115,10 @@ def main():
         rss_time = arrow.get(item.published)
         logging.info("RSS Time: %s", str(rss_time))
         # Use only the plain title as content, and add the link on a new line
-        title_text = BeautifulSoup(item.title, "html.parser").get_text().strip()
+        if is_html(item.title):
+            title_text = BeautifulSoup(item.title, "html.parser").get_text().strip()
+        else:
+            title_text = item.title.strip()
         post_text = f"{title_text}\n{item.link}"
         logging.info("Title+link used as content: %s", post_text)
         rich_text = make_rich(post_text)
