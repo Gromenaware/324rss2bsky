@@ -8,6 +8,7 @@ import time
 from atproto import Client, client_utils, models
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+import html  # Import the html library for unescaping HTML entities
 
 # --- Logging ---
 LOG_PATH = "rss2bsky.log"
@@ -119,6 +120,8 @@ def main():
             title_text = BeautifulSoup(item.title, "html.parser").get_text().strip()
         else:
             title_text = item.title.strip()
+        # Unescape HTML entities in the title
+        title_text = html.unescape(title_text)
         post_text = f"{title_text}\n{item.link}"
         logging.info("Title+link used as content: %s", post_text)
         rich_text = make_rich(post_text)
