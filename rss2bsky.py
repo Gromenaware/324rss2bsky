@@ -15,7 +15,7 @@ LOG_PATH = "rss2bsky.log"
 logging.basicConfig(
     format="%(asctime)s %(message)s",
     filename=LOG_PATH,
-    encoding="ISO-8859-1",
+    encoding="latin-1",
     level=logging.INFO,
 )
 
