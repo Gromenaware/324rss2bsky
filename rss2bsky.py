@@ -11,13 +11,22 @@ from urllib.parse import urlparse
 import html  # Import the html library for unescaping HTML entities
 
 # --- Logging ---
-LOG_PATH = "rss2bsky.log"
+LOG_PATH = "rss2bsky_test.log"  # Fitxer de log per a tests
 logging.basicConfig(
     format="%(asctime)s %(message)s",
     filename=LOG_PATH,
     encoding="latin_1",
-    level=logging.INFO,
+    level=logging.INFO,  # Nivell DEBUG per veure més detalls durant el test
 )
+
+# --- Funció per desescapar caràcters unicode ---
+def desescapar_unicode(text):
+    try:
+        # Utilitzar unicode_escape per desescapar caràcters unicode
+        return text.encode('utf-8').decode('unicode_escape')
+    except Exception as e:
+        logging.warning(f"Error desescapant unicode: {e}")
+        return text  # Retorna el text original si hi ha un error
 
 def fetch_link_metadata(url):
     try:
@@ -115,20 +124,21 @@ def main():
     for item in feed.entries:
         rss_time = arrow.get(item.published)
         logging.info("RSS Time: %s", str(rss_time))
-        # Use only the plain title as content, and add the link on a new line
+        # Processar el títol per evitar problemes de codificació
         if is_html(item.title):
             title_text = BeautifulSoup(item.title, "html.parser").get_text().strip()
         else:
             title_text = item.title.strip()
-        # Unescape HTML entities in the title
-        title_text = html.unescape(title_text)
+
+        # Desescapar caràcters unicode
+        title_text = desescapar_unicode(title_text)
+
         post_text = f"{title_text}\n{item.link}"
         logging.info("Title+link used as content: %s", post_text)
         rich_text = make_rich(post_text)
         logging.info("Rich text length: %d" % (len(rich_text.build_text())))
         logging.info("Filtered Content length: %d" % (len(post_text)))
-        if rss_time > last_bsky: # Only post if newer than last Bluesky post
-        #if True:  # FOR TESTING ONLY!
+        if rss_time > last_bsky:  # Només publicar si és més nou que l'últim post
             link_metadata = fetch_link_metadata(item.link)
             images = []
 
@@ -161,12 +171,13 @@ def main():
             elif external_embed:
                 embed = external_embed
 
-            # Post
+            # TEST MODE: No enviar el post, només registrar l'acció
             try:
-                client.send_post(rich_text, embed=embed)
-                logging.info("Sent post %s" % (item.link))
+                logging.info("Test mode: Preparing to send post %s" % (item.link))
+                client.send_post(rich_text, embed=embed)  # DESACTIVAT PER TEST
+                logging.info("Test mode: Post prepared %s" % (item.link))
             except Exception as e:
-                logging.exception("Failed to post %s" % (item.link))
+                logging.exception("Failed to prepare post %s" % (item.link))
         else:
             logging.debug("Not sending %s" % (item.link))
 
