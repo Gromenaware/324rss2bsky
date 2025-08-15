@@ -5,9 +5,9 @@ import logging
 import re
 import httpx
 import time
+import charset_normalizer  # Per detectar la codificació del feed
 from atproto import Client, client_utils, models
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse
 import html  # Import the html library for unescaping HTML entities
 
 # --- Logging ---
@@ -15,18 +15,40 @@ LOG_PATH = "rss2bsky_test.log"  # Fitxer de log per a tests
 logging.basicConfig(
     format="%(asctime)s %(message)s",
     filename=LOG_PATH,
-    encoding="latin_1",
+    encoding="utf-8",
     level=logging.INFO,  # Nivell DEBUG per veure més detalls durant el test
 )
+
+# --- Funció per corregir problemes de codificació ---
+def fix_encoding(text):
+    try:
+        # Intenta decodificar i reencodificar a UTF-8
+        return text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        logging.warning(f"Error corregint codificació: {text}")
+        return text  # Retorna el text original si hi ha un error
 
 # --- Funció per desescapar caràcters unicode ---
 def desescapar_unicode(text):
     try:
-        # Utilitzar unicode_escape per desescapar caràcters unicode
-        return text.encode('utf-8').decode('unicode_escape')
+        return html.unescape(text)  # Utilitza html.unescape per gestionar HTML entities
     except Exception as e:
         logging.warning(f"Error desescapant unicode: {e}")
         return text  # Retorna el text original si hi ha un error
+
+# --- Funció per processar el títol ---
+def process_title(title):
+    try:
+        if is_html(title):
+            title_text = BeautifulSoup(title, "html.parser", from_encoding="utf-8").get_text().strip()
+        else:
+            title_text = title.strip()
+        title_text = desescapar_unicode(title_text)  # Desescapar HTML entities
+        title_text = fix_encoding(title_text)  # Corregir problemes de codificació
+        return title_text
+    except Exception as e:
+        logging.warning(f"Error processant el títol: {e}")
+        return title
 
 def fetch_link_metadata(url):
     try:
@@ -119,25 +141,38 @@ def main():
     last_bsky = get_last_bsky(client, bsky_handle)
 
     # --- Parse feed ---
-    feed = fastfeedparser.parse(feed_url)
+    response = httpx.get(feed_url)
+    response.raise_for_status()  # Comprova que la resposta sigui correcta
+
+    try:
+        # Detecta automàticament la codificació i converteix a UTF-8
+        result = charset_normalizer.from_bytes(response.content).best()
+        if not result or not hasattr(result, "text"):
+            raise ValueError("No s'ha pogut detectar la codificació del feed o el text no és accessible.")
+        feed_content = result.text  # Contingut decodificat com UTF-8
+    except ValueError:
+        logging.warning("No s'ha pogut detectar la codificació amb charset_normalizer. Provant amb latin-1.")
+        try:
+            feed_content = response.content.decode("latin-1")
+        except UnicodeDecodeError:
+            logging.warning("No s'ha pogut decodificar amb latin-1. Provant amb utf-8 amb errors ignorats.")
+            feed_content = response.content.decode("utf-8", errors="ignore")
+
+    feed = fastfeedparser.parse(feed_content)  # Passa el contingut decodificat al parser
 
     for item in feed.entries:
         rss_time = arrow.get(item.published)
         logging.info("RSS Time: %s", str(rss_time))
         # Processar el títol per evitar problemes de codificació
-        if is_html(item.title):
-            title_text = BeautifulSoup(item.title, "html.parser").get_text().strip()
-        else:
-            title_text = item.title.strip()
-
-        # Desescapar caràcters unicode
-        title_text = desescapar_unicode(title_text)
+        title_text = process_title(item.title)
 
         post_text = f"{title_text}\n{item.link}"
         logging.info("Title+link used as content: %s", post_text)
         rich_text = make_rich(post_text)
         logging.info("Rich text length: %d" % (len(rich_text.build_text())))
         logging.info("Filtered Content length: %d" % (len(post_text)))
+        #if True:
+        #    logging.info("Always posting: %s" % (item.link))
         if rss_time > last_bsky:  # Només publicar si és més nou que l'últim post
             link_metadata = fetch_link_metadata(item.link)
             images = []
