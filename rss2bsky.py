@@ -8,10 +8,10 @@ import time
 import charset_normalizer  # Per detectar la codificació del feed
 from atproto import Client, client_utils, models
 from bs4 import BeautifulSoup
-import html  # Import the html library for unescaping HTML entities
+import html  # Per desescapar entitats HTML
 
 # --- Logging ---
-LOG_PATH = "rss2bsky_test.log"  # Fitxer de log per a tests
+LOG_PATH = "rss2bsky_test.log"  # Fitxer de log per a depuració
 logging.basicConfig(
     format="%(asctime)s %(message)s",
     filename=LOG_PATH,
@@ -119,18 +119,23 @@ def main():
     parser.add_argument("bsky_handle", help="Bluesky handle")
     parser.add_argument("bsky_username", help="Bluesky username")
     parser.add_argument("bsky_app_password", help="Bluesky app password")
+    parser.add_argument("--service", default="https://bsky.social", help="Bluesky server URL (default: https://bsky.social)")
     args = parser.parse_args()
     feed_url = args.rss_feed
     bsky_handle = args.bsky_handle
     bsky_username = args.bsky_username
     bsky_password = args.bsky_app_password
+    service_url = args.service
 
     # --- Login ---
-    client = Client()
+    client = Client(base_url=service_url)  # Inicialitzem directament amb el servidor personalitzat
+    
     backoff = 60
     while True:
         try:
+            logging.info(f"Attempting login to server: {service_url} with user: {bsky_username}")
             client.login(bsky_username, bsky_password)
+            logging.info(f"Login successful for user: {bsky_username}")
             break
         except Exception as e:
             logging.exception("Login exception")
@@ -171,15 +176,13 @@ def main():
         rich_text = make_rich(post_text)
         logging.info("Rich text length: %d" % (len(rich_text.build_text())))
         logging.info("Filtered Content length: %d" % (len(post_text)))
-        #if True:
-        #    logging.info("Always posting: %s" % (item.link))
-        if rss_time > last_bsky:  # Només publicar si és més nou que l'últim post
+        # Si el RSS és més nou que l'últim post, publica
+        if rss_time > last_bsky:
             link_metadata = fetch_link_metadata(item.link)
             images = []
 
             # Try to fetch image from snippet (Open Graph/Twitter Card)
             if link_metadata.get("image"):
-                # Prefer the RSS title, fall back to the link_metadata's title
                 alt_text = title_text or link_metadata.get("title") or "Preview image"
                 img = get_image_from_url(link_metadata["image"], client, alt_text=alt_text)
                 if img:
