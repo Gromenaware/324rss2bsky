@@ -95,16 +95,14 @@ def make_rich(content):
                     text_builder.text(t)
     return text_builder
 
-def get_image_from_url(image_url, client, alt_text="Preview image"):
+# --- Nova funció: Només retorna el 'blob' necessari per a la miniatura de l'enllaç ---
+def get_blob_from_url(image_url, client):
     try:
-        r = httpx.get(image_url)
+        r = httpx.get(image_url, timeout=10)
         if r.status_code != 200:
             return None
         img_blob = client.upload_blob(r.content)
-        img_model = models.AppBskyEmbedImages.Image(
-            alt=alt_text, image=img_blob.blob
-        )
-        return img_model
+        return img_blob.blob
     except Exception as e:
         logging.warning(f"Could not fetch/upload image from {image_url}: {e}")
         return None
@@ -176,43 +174,33 @@ def main():
         rich_text = make_rich(post_text)
         logging.info("Rich text length: %d" % (len(rich_text.build_text())))
         logging.info("Filtered Content length: %d" % (len(post_text)))
+        
         # Si el RSS és més nou que l'últim post, publica
         if rss_time > last_bsky:
+        #if True: # TEST MODE: Sempre publicar, independentment de la data
             link_metadata = fetch_link_metadata(item.link)
-            images = []
-
-            # Try to fetch image from snippet (Open Graph/Twitter Card)
+            
+            # --- 1. Obtenim el blob de la imatge per a la miniatura ---
+            thumb_blob = None
             if link_metadata.get("image"):
-                alt_text = title_text or link_metadata.get("title") or "Preview image"
-                img = get_image_from_url(link_metadata["image"], client, alt_text=alt_text)
-                if img:
-                    images.append(img)
+                thumb_blob = get_blob_from_url(link_metadata["image"], client)
 
-            logging.info("Images length: %d" % (len(images)))
-
-            # --- Add external embed for link preview ---
-            external_embed = None
-            if link_metadata.get("title") or link_metadata.get("description"):
-                external_embed = models.AppBskyEmbedExternal.Main(
+            # --- 2. Creem l'embed extern (targeta d'enllaç) i hi assignem la miniatura ---
+            embed = None
+            if link_metadata.get("title") or link_metadata.get("description") or thumb_blob:
+                embed = models.AppBskyEmbedExternal.Main(
                     external=models.AppBskyEmbedExternal.External(
                         uri=item.link,
-                        title=link_metadata.get("title") or "Link",
+                        title=link_metadata.get("title") or title_text or "Enllaç",
                         description=link_metadata.get("description") or "",
-                        thumb=None,
+                        thumb=thumb_blob,  # Aquí carreguem la imatge a la targeta
                     )
                 )
-
-            # Compose embed (images or link preview)
-            embed = None
-            if images:
-                embed = models.AppBskyEmbedImages.Main(images=images)
-            elif external_embed:
-                embed = external_embed
 
             # TEST MODE: No enviar el post, només registrar l'acció
             try:
                 logging.info("Test mode: Preparing to send post %s" % (item.link))
-                client.send_post(rich_text, embed=embed)  # DESACTIVAT PER TEST
+                client.send_post(rich_text, embed=embed)
                 logging.info("Test mode: Post prepared %s" % (item.link))
             except Exception as e:
                 logging.exception("Failed to prepare post %s" % (item.link))
