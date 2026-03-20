@@ -118,12 +118,16 @@ def main():
     parser.add_argument("bsky_username", help="Bluesky username")
     parser.add_argument("bsky_app_password", help="Bluesky app password")
     parser.add_argument("--service", default="https://bsky.social", help="Bluesky server URL (default: https://bsky.social)")
+    # Nova opció per a l'idioma, per defecte en català ('ca')
+    parser.add_argument("--lang", default="ca", help="Language code for the post (default: ca)")
     args = parser.parse_args()
+    
     feed_url = args.rss_feed
     bsky_handle = args.bsky_handle
     bsky_username = args.bsky_username
     bsky_password = args.bsky_app_password
     service_url = args.service
+    post_lang = args.lang
 
     # --- Login ---
     client = Client(base_url=service_url)  # Inicialitzem directament amb el servidor personalitzat
@@ -200,7 +204,8 @@ def main():
             # TEST MODE: No enviar el post, només registrar l'acció
             try:
                 logging.info("Test mode: Preparing to send post %s" % (item.link))
-                client.send_post(rich_text, embed=embed)
+                # Afegim langs=[post_lang] per especificar l'idioma
+                client.send_post(rich_text, embed=embed, langs=[post_lang])
                 logging.info("Test mode: Post prepared %s" % (item.link))
             except Exception as e:
                 logging.exception("Failed to prepare post %s" % (item.link))
