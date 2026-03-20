@@ -180,8 +180,8 @@ def main():
         logging.info("Filtered Content length: %d" % (len(post_text)))
         
         # Si el RSS és més nou que l'últim post, publica
-        if rss_time > last_bsky:
-        #if True: # TEST MODE: Sempre publicar, independentment de la data
+        #if rss_time > last_bsky:
+        if True: # TEST MODE: Sempre publicar, independentment de la data
             link_metadata = fetch_link_metadata(item.link)
             
             # --- 1. Obtenim el blob de la imatge per a la miniatura ---
